@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 
 class ApiClient:
-    """Клиент для обращения к JSONPlaceholder API."""
 
     def __init__(
         self,
@@ -35,31 +34,18 @@ class ApiClient:
         self._session = requests.Session()
 
     def get_users(self) -> list[dict[str, Any]]:
-        """Получить список всех пользователей."""
         return self._get("/users")
 
     def get_posts(self) -> list[dict[str, Any]]:
-        """Получить список всех постов."""
         return self._get("/posts")
 
     def get_comments(self) -> list[dict[str, Any]]:
-        """Получить список всех комментариев."""
         return self._get("/comments")
 
     def _get(self, endpoint: str) -> list[dict[str, Any]]:
-        """
-        Выполнить GET-запрос с retry-логикой.
-
-        Retry делается при:
-        - requests.Timeout
-        - requests.ConnectionError
-        - HTTP-статусах из RETRY_STATUS_CODES (429, 500, 503)
-        """
         url = f"{self._base_url}{endpoint}"
         last_exception: Exception | None = None
 
-        # self._max_retries + 1 дает нам ОБЩЕЕ количество попыток.
-        # Если MAX_RETRIES = 2, цикл отработает 3 раза.
         for attempt in range(self._max_retries + 1):
             if attempt > 0:
                 delay = self._backoff_base * (2 ** (attempt - 1))
@@ -88,11 +74,9 @@ class ApiClient:
                 last_exception = exc
 
             except (DataNotFoundError, ApiClientError):
-                # 4xx — retry не нужен, сразу пробрасываем
                 raise
 
             except ApiServerError as exc:
-                # 5xx — запоминаем и делаем retry
                 last_exception = exc
 
         raise ApiServerError(
@@ -101,7 +85,6 @@ class ApiClient:
 
     @staticmethod
     def _handle_response(response: requests.Response, url: str) -> list[dict[str, Any]]:
-        """Разобрать HTTP-ответ и вернуть данные или поднять исключение."""
         status = response.status_code
 
         if status == 200:
@@ -117,7 +100,6 @@ class ApiClient:
             raise DataNotFoundError(f"Ресурс не найден: {url}", status_code=status)
 
         if status in RETRY_STATUS_CODES:
-            # Сигнал для retry — пробрасываем как ApiServerError
             raise ApiServerError(f"Сервер вернул {status} для {url}", status_code=status)
 
         if 400 <= status < 500:
@@ -126,7 +108,6 @@ class ApiClient:
         raise ApiServerError(f"Ошибка сервера {status} для {url}", status_code=status)
 
     def close(self) -> None:
-        """Закрыть HTTP-сессию."""
         self._session.close()
 
     def __enter__(self) -> ApiClient:

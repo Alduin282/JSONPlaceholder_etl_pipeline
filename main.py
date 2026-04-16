@@ -1,14 +1,3 @@
-"""
-main.py — Точка входа в ETL-приложение.
-
-Отвечает за:
-- Инициализацию логирования
-- Настройку окружения (UNICODE на Windows)
-- Сборку зависимостей (ApiClient, Repository)
-- Запуск Loader
-- Глобальную обработку ошибок
-"""
-
 import logging
 import sys
 
@@ -28,7 +17,6 @@ if hasattr(sys.stdout, "reconfigure"):
 
 
 def setup_logging() -> None:
-    """Настроить логирование для всего приложения."""
     logging.basicConfig(
         level=LOG_LEVEL,
         format=LOG_FORMAT,

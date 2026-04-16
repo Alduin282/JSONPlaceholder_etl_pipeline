@@ -1,14 +1,3 @@
-"""
-repository.py — Репозиторий: DDL и DML операции с SQLite.
-
-Отвечает только за:
-- Создание таблиц (CREATE TABLE IF NOT EXISTS)
-- UPSERT-операции через ON CONFLICT DO UPDATE
-- Работу с объектами Connection (не открывает соединения сам)
-
-НЕ знает ничего об API, HTTP или валидации.
-"""
-
 import logging
 import sqlite3
 
@@ -18,14 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class Repository:
-    """Репозиторий для операций с таблицами users / posts / comments."""
-
     def create_tables(self, conn: sqlite3.Connection) -> None:
-        """
-        Создать таблицы, если они ещё не существуют.
-        Вызывается один раз при старте приложения.
-        """
-
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -88,15 +70,7 @@ class Repository:
         )
         logger.info("Схема БД проверена / создана")
 
-    # ------------------------------------------------------------------
-    # DML — UPSERT-операции
-    # ------------------------------------------------------------------
-
     def upsert_users(self, conn: sqlite3.Connection, users: list[User]) -> int:
-        """
-        Вставить или обновить пользователей.
-        ON CONFLICT(id) DO UPDATE обновляет все поля кроме PK.
-        """
         sql = """
             INSERT INTO users (id, name, username, email, phone, website)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -113,9 +87,6 @@ class Repository:
         return len(tuples)
 
     def upsert_user_addresses(self, conn: sqlite3.Connection, users: list[User]) -> int:
-        """
-        Вставить или обновить адреса пользователей.
-        """
         sql = """
             INSERT INTO user_addresses (user_id, street, suite, city, zipcode, geo_lat, geo_lng)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -133,9 +104,6 @@ class Repository:
         return len(tuples)
 
     def upsert_user_companies(self, conn: sqlite3.Connection, users: list[User]) -> int:
-        """
-        Вставить или обновить компании пользователей.
-        """
         sql = """
             INSERT INTO user_companies (user_id, name, catch_phrase, bs)
             VALUES (?, ?, ?, ?)
@@ -150,9 +118,6 @@ class Repository:
         return len(tuples)
 
     def upsert_posts(self, conn: sqlite3.Connection, posts: list[Post]) -> int:
-        """
-        Вставить или обновить посты.
-        """
         sql = """
             INSERT INTO posts (id, user_id, title, body)
             VALUES (?, ?, ?, ?)
@@ -167,9 +132,6 @@ class Repository:
         return len(tuples)
 
     def upsert_comments(self, conn: sqlite3.Connection, comments: list[Comment]) -> int:
-        """
-        Вставить или обновить комментарии.
-        """
         sql = """
             INSERT INTO comments (id, post_id, name, email, body)
             VALUES (?, ?, ?, ?, ?)

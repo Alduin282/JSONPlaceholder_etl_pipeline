@@ -1,25 +1,12 @@
-"""
-models.py — Pydantic v2 схемы для валидации данных из API.
-
-Каждая модель:
-- Проверяет типы и обязательные поля
-- Задаёт разумные дефолты для необязательных полей
-- Предоставляет метод для сериализации в кортеж (для executemany)
-"""
-
 from pydantic import BaseModel, EmailStr, field_validator
 
 
 class Geo(BaseModel):
-    """Географические координаты из address.geo."""
-
     lat: str = ""
     lng: str = ""
 
 
 class Address(BaseModel):
-    """Адрес пользователя. Geo расплющивается в geo_lat / geo_lng."""
-
     street: str = ""
     suite: str = ""
     city: str = ""
@@ -27,7 +14,6 @@ class Address(BaseModel):
     geo: Geo = Geo()
 
     def to_db_tuple(self, user_id: int) -> tuple:
-        """Кортеж для INSERT в таблицу user_addresses."""
         return (
             user_id,
             self.street,
@@ -40,20 +26,15 @@ class Address(BaseModel):
 
 
 class Company(BaseModel):
-    """Компания пользователя."""
-
     name: str = ""
     catchPhrase: str = ""
     bs: str = ""
 
     def to_db_tuple(self, user_id: int) -> tuple:
-        """Кортеж для INSERT в таблицу user_companies."""
         return (user_id, self.name, self.catchPhrase, self.bs)
 
 
 class User(BaseModel):
-    """Схема пользователя из /users."""
-
     id: int
     name: str
     username: str
@@ -71,7 +52,6 @@ class User(BaseModel):
         return v.strip()
 
     def to_db_tuple(self) -> tuple:
-        """Кортеж значений для INSERT в таблицу users (без address и company)."""
         return (
             self.id,
             self.name,
@@ -83,8 +63,6 @@ class User(BaseModel):
 
 
 class Post(BaseModel):
-    """Схема поста из /posts."""
-
     id: int
     userId: int
     title: str
@@ -98,13 +76,10 @@ class Post(BaseModel):
         return v.strip()
 
     def to_db_tuple(self) -> tuple:
-        """Кортеж значений для INSERT в таблицу posts."""
         return (self.id, self.userId, self.title, self.body)
 
 
 class Comment(BaseModel):
-    """Схема комментария из /comments."""
-
     id: int
     postId: int
     name: str
@@ -119,5 +94,4 @@ class Comment(BaseModel):
         return v.strip()
 
     def to_db_tuple(self) -> tuple:
-        """Кортеж значений для INSERT в таблицу comments."""
         return (self.id, self.postId, self.name, str(self.email), self.body)
