@@ -1,10 +1,9 @@
-from __future__ import annotations
-
 import logging
-import time
-from typing import Any
+from typing import Any, Dict, List
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from src.config import (
     API_BASE_URL,
@@ -13,105 +12,45 @@ from src.config import (
     RETRY_BACKOFF_BASE,
     RETRY_STATUS_CODES,
 )
-from src.exceptions import ApiClientError, ApiServerError, DataNotFoundError
+from src.exceptions import ApiError
 
 logger = logging.getLogger(__name__)
 
 
 class ApiClient:
-
-    def __init__(
-        self,
-        base_url: str = API_BASE_URL,
-        timeout: int = REQUEST_TIMEOUT,
-        max_retries: int = MAX_RETRIES,
-        backoff_base: float = RETRY_BACKOFF_BASE,
-    ) -> None:
-        self._base_url = base_url.rstrip("/")
-        self._timeout = timeout
-        self._max_retries = max_retries
-        self._backoff_base = backoff_base
+    def __init__(self) -> None:
+        self._base_url = API_BASE_URL
         self._session = requests.Session()
 
-    def get_users(self) -> list[dict[str, Any]]:
-        return self._get("/users")
+        retry_strategy = Retry(
+            total=MAX_RETRIES,
+            backoff_factor=RETRY_BACKOFF_BASE,
+            status_forcelist=RETRY_STATUS_CODES,
+            allowed_methods=["GET"],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self._session.mount("https://", adapter)
+        self._session.mount("http://", adapter)
 
-    def get_posts(self) -> list[dict[str, Any]]:
-        return self._get("/posts")
-
-    def get_comments(self) -> list[dict[str, Any]]:
-        return self._get("/comments")
-
-    def _get(self, endpoint: str) -> list[dict[str, Any]]:
-        url = f"{self._base_url}{endpoint}"
-        last_exception: Exception | None = None
-
-        for attempt in range(self._max_retries + 1):
-            if attempt > 0:
-                delay = self._backoff_base * (2 ** (attempt - 1))
-                logger.debug(
-                    "Retry %d/%d для %s: ожидание %.1fс",
-                    attempt,
-                    self._max_retries,
-                    url,
-                    delay,
-                )
-                time.sleep(delay)
-
-            try:
-                logger.debug("GET %s (попытка %d/%d)", url, attempt + 1, self._max_retries + 1)
-                response = self._session.get(url, timeout=self._timeout)
-                return self._handle_response(response, url)
-
-            except (requests.Timeout, requests.ConnectionError) as exc:
-                logger.warning(
-                    "Сетевая ошибка при GET %s (попытка %d/%d): %s",
-                    url,
-                    attempt + 1,
-                    self._max_retries + 1,
-                    exc,
-                )
-                last_exception = exc
-
-            except (DataNotFoundError, ApiClientError):
-                raise
-
-            except ApiServerError as exc:
-                last_exception = exc
-
-        raise ApiServerError(
-            f"Не удалось получить {url} после {self._max_retries + 1} попыток. " f"Последняя ошибка: {last_exception}"
-        ) from last_exception
-
-    @staticmethod
-    def _handle_response(response: requests.Response, url: str) -> list[dict[str, Any]]:
-        status = response.status_code
-
-        if status == 200:
-            data = response.json()
-            if not isinstance(data, list):
-                raise ApiClientError(
-                    f"Ожидался список, получен {type(data).__name__} от {url}",
-                    status_code=status,
-                )
-            return data
-
-        if status == 404:
-            raise DataNotFoundError(f"Ресурс не найден: {url}", status_code=status)
-
-        if status in RETRY_STATUS_CODES:
-            raise ApiServerError(f"Сервер вернул {status} для {url}", status_code=status)
-
-        if 400 <= status < 500:
-            raise ApiClientError(f"Ошибка клиента {status} для {url}", status_code=status)
-
-        raise ApiServerError(f"Ошибка сервера {status} для {url}", status_code=status)
-
-    def close(self) -> None:
-        self._session.close()
-
-    def __enter__(self) -> ApiClient:
+    def __enter__(self) -> "ApiClient":
         return self
 
-    def __exit__(self, *_: object) -> None:
-        self.close()
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self._session.close()
+
+    def get_resource(self, resource_name: str) -> List[Dict[str, Any]]:
+        url = f"{self._base_url}/{resource_name}"
+        try:
+            logger.debug("Запрос к API: %s", url)
+            response = self._session.get(url, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+
+            data = response.json()
+            logger.info("Успешно получено %d записей для ресурса '%s'", len(data), resource_name)
+            return data
+
+        except requests.exceptions.HTTPError as exc:
+            status = getattr(exc.response, "status_code", "N/A")
+            raise ApiError(f"HTTP ошибка {status} для {resource_name}: {exc}", status_code=status) from exc
+        except requests.exceptions.RequestException as exc:
+            raise ApiError(f"Ошибка соединения при запросе {resource_name}: {exc}") from exc

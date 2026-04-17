@@ -35,8 +35,8 @@ def main() -> None:
 
     try:
         with ApiClient() as api_client:
-            repo = Repository()
-            loader = Loader(api_client=api_client, repository=repo)
+            repository = Repository()
+            loader = Loader(api_client=api_client, repository=repository)
             loader.run()
 
     except ApiError as exc:

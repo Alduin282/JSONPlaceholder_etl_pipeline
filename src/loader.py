@@ -1,98 +1,79 @@
 import logging
-from typing import Any, Type, TypeVar
+from typing import Any, Dict
 
-from pydantic import BaseModel, ValidationError as PydanticValidationError
+from pydantic import ValidationError as PydanticValidationError
+from sqlalchemy.orm import Session
 
 from src.api_client import ApiClient
-from src.db import get_connection
+from src.db import get_session, engine
 from src.exceptions import ValidationError
-from src.models import Comment, Post, User
+from src.models import Comment, Post, User, Address, Company
 from src.repository import Repository
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T", bound=BaseModel)
-
 
 class Loader:
-    def __init__(self, api_client: ApiClient, repository: Repository) -> None:
-        self._api = api_client
-        self._repo = repository
+    def __init__(self, api_client: ApiClient, repository: Repository):
+        self._api_client = api_client
+        self._repository = repository
+
+        self._registry = [
+            {
+                "resource": "users",
+                "model": User,
+                "storage": [
+                    (User, lambda m: m.model_dump(exclude={"address", "company"})),
+                    (
+                        Address,
+                        lambda m: (
+                            {
+                                "user_id": m.id,
+                                **m.address.model_dump(exclude={"geo"}),
+                                "geo_lat": m.address.geo_lat,
+                                "geo_lng": m.address.geo_lng,
+                            }
+                            if m.address
+                            else None
+                        ),
+                    ),
+                    (Company, lambda m: {"user_id": m.id, **m.company.model_dump()} if m.company else None),
+                ],
+            },
+            {"resource": "posts", "model": Post, "storage": [(Post, lambda m: m.model_dump())]},
+            {"resource": "comments", "model": Comment, "storage": [(Comment, lambda m: m.model_dump())]},
+        ]
 
     def run(self) -> None:
-        logger.info("=== ETL-процесс начат ===")
-        self._ensure_schema()
-        self._load_users()
-        self._load_posts()
-        self._load_comments()
-        logger.info("=== ETL-процесс завершён ===")
+        self._repository.create_tables(engine)
 
-    def _ensure_schema(self) -> None:
-        with get_connection() as conn:
-            self._repo.create_tables(conn)
+        with get_session() as session:
+            with session.begin():
+                for entity in self._registry:
+                    self._process_entity(session, entity)
 
-    def _load_users(self) -> None:
-        logger.info("--- Загрузка users ---")
-        raw: list[dict[str, Any]] = self._api.get_users()
-        users = self._validate_many(raw, User, resource="users")
+    def _process_entity(self, session: Session, config: Dict[str, Any]) -> None:
+        resource = config["resource"]
+        raw_data = self._api_client.get_resource(resource)
+        model_cls = config["model"]
 
-        if not users:
-            logger.warning("Нет валидных users для сохранения, пропускаем")
-            return
+        valid_models = []
+        errors_count = 0
 
-        with get_connection() as conn:
-            count = self._repo.upsert_users(conn, users)
-            self._repo.upsert_user_addresses(conn, users)
-            self._repo.upsert_user_companies(conn, users)
-
-        logger.info("users (и доп. данные) сохранено: %d", count)
-
-    def _load_posts(self) -> None:
-        logger.info("--- Загрузка posts ---")
-        raw: list[dict[str, Any]] = self._api.get_posts()
-        posts = self._validate_many(raw, Post, resource="posts")
-
-        if not posts:
-            logger.warning("Нет валидных posts для сохранения, пропускаем")
-            return
-
-        with get_connection() as conn:
-            count = self._repo.upsert_posts(conn, posts)
-        logger.info("posts сохранено: %d", count)
-
-    def _load_comments(self) -> None:
-        logger.info("--- Загрузка comments ---")
-        raw: list[dict[str, Any]] = self._api.get_comments()
-        comments = self._validate_many(raw, Comment, resource="comments")
-
-        if not comments:
-            logger.warning("Нет валидных comments для сохранения, пропускаем")
-            return
-
-        with get_connection() as conn:
-            count = self._repo.upsert_comments(conn, comments)
-        logger.info("comments сохранено: %d", count)
-
-    @staticmethod
-    def _validate_many(
-        raw_items: list[dict[str, Any]],
-        model: Type[T],
-        resource: str,
-    ) -> list[T]:
-        valid: list[T] = []
-        for item in raw_items:
+        for item in raw_data:
             try:
-                valid.append(model(**item))
-            except PydanticValidationError as exc:
-                logger.warning(
-                    "Запись %s (id=%s) не прошла валидацию: %s",
-                    resource,
-                    item.get("id"),
-                    exc.errors()[0]["msg"],
-                )
+                valid_models.append(model_cls.model_validate(item))
+            except PydanticValidationError as e:
+                errors_count += 1
+                logger.warning("Ошибка в %s: %s", resource, e)
 
-        if not valid and raw_items:
-            raise ValidationError(f"Все {len(raw_items)} записей {resource} не прошли валидацию")
+        if raw_data and errors_count == len(raw_data):
+            raise ValidationError(f"Все записи {resource} битые")
 
-        logger.debug("%s: успешно провалидировано %d записей", resource, len(valid))
-        return valid
+        for db_class, mapper in config["storage"]:
+            # Пропускаем записи, для которых mapper вернул None (например, если нет адреса)
+            db_records = [rec for m in valid_models if (rec := mapper(m)) is not None]
+            if db_records:
+                self._repository.upsert_many(session, db_class, db_records)
+
+        logger.info("Загружено %s: %d записей", resource, len(valid_models))

@@ -1,97 +1,112 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from typing import List, Optional
+from pydantic import field_validator, ConfigDict, EmailStr, model_validator
+from sqlmodel import Field, Relationship, SQLModel
 
 
-class Geo(BaseModel):
-    lat: str = ""
-    lng: str = ""
+class User(SQLModel, table=True):
+    __tablename__ = "users"
 
-
-class Address(BaseModel):
-    street: str = ""
-    suite: str = ""
-    city: str = ""
-    zipcode: str = ""
-    geo: Geo = Geo()
-
-    def to_db_tuple(self, user_id: int) -> tuple:
-        return (
-            user_id,
-            self.street,
-            self.suite,
-            self.city,
-            self.zipcode,
-            self.geo.lat,
-            self.geo.lng,
-        )
-
-
-class Company(BaseModel):
-    name: str = ""
-    catchPhrase: str = ""
-    bs: str = ""
-
-    def to_db_tuple(self, user_id: int) -> tuple:
-        return (user_id, self.name, self.catchPhrase, self.bs)
-
-
-class User(BaseModel):
-    id: int
-    name: str
-    username: str
+    id: int = Field(primary_key=True)
+    name: str = Field(index=True)
+    username: str = Field(index=True)
     email: EmailStr
     phone: str = ""
     website: str = ""
-    address: Address = Address()
-    company: Company = Company()
+
+    address: Optional["Address"] = Relationship(
+        back_populates="user", sa_relationship_kwargs={"cascade": "all, delete-orphan", "uselist": False}
+    )
+    company: Optional["Company"] = Relationship(
+        back_populates="user", sa_relationship_kwargs={"cascade": "all, delete-orphan", "uselist": False}
+    )
+    posts: List["Post"] = Relationship(back_populates="user", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
     @field_validator("name", "username")
     @classmethod
     def must_not_be_empty(cls, v: str) -> str:
-        if not v.strip():
+        if isinstance(v, str) and not v.strip():
             raise ValueError("Поле не может быть пустой строкой")
-        return v.strip()
+        return v.strip() if isinstance(v, str) else v
 
-    def to_db_tuple(self) -> tuple:
-        return (
-            self.id,
-            self.name,
-            self.username,
-            str(self.email),
-            self.phone,
-            self.website,
-        )
+    model_config = ConfigDict(populate_by_name=True)
 
 
-class Post(BaseModel):
-    id: int
-    userId: int
+class Address(SQLModel, table=True):
+    __tablename__ = "user_addresses"
+
+    user_id: int = Field(foreign_key="users.id", primary_key=True, ondelete="CASCADE")
+    street: str = ""
+    suite: str = ""
+    city: str = ""
+    zipcode: str = ""
+
+    geo_lat: str = ""
+    geo_lng: str = ""
+
+    user: Optional["User"] = Relationship(back_populates="address")
+
+    @model_validator(mode="before")
+    @classmethod
+    def flatten_geo(cls, data: any) -> any:
+        if isinstance(data, dict) and "geo" in data:
+            geo = data.pop("geo")
+            data["geo_lat"] = geo.get("lat", "")
+            data["geo_lng"] = geo.get("lng", "")
+        return data
+
+
+class Company(SQLModel, table=True):
+    __tablename__ = "user_companies"
+
+    user_id: int = Field(foreign_key="users.id", primary_key=True, ondelete="CASCADE")
+    name: str = ""
+    catch_phrase: str = Field(default="", alias="catchPhrase")
+    bs: str = ""
+
+    user: Optional["User"] = Relationship(back_populates="company")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class Post(SQLModel, table=True):
+    __tablename__ = "posts"
+
+    id: int = Field(primary_key=True)
+    user_id: int = Field(foreign_key="users.id", ondelete="CASCADE", alias="userId")
     title: str
     body: str
+
+    user: Optional["User"] = Relationship(back_populates="posts")
+    comments: List["Comment"] = Relationship(
+        back_populates="post", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
 
     @field_validator("title", "body")
     @classmethod
     def must_not_be_empty(cls, v: str) -> str:
-        if not v.strip():
+        if isinstance(v, str) and not v.strip():
             raise ValueError("Поле не может быть пустой строкой")
-        return v.strip()
+        return v.strip() if isinstance(v, str) else v
 
-    def to_db_tuple(self) -> tuple:
-        return (self.id, self.userId, self.title, self.body)
+    model_config = ConfigDict(populate_by_name=True)
 
 
-class Comment(BaseModel):
-    id: int
-    postId: int
+class Comment(SQLModel, table=True):
+    __tablename__ = "comments"
+
+    id: int = Field(primary_key=True)
+    post_id: int = Field(foreign_key="posts.id", ondelete="CASCADE", alias="postId")
     name: str
     email: EmailStr
     body: str
 
+    post: Optional["Post"] = Relationship(back_populates="comments")
+
     @field_validator("name", "body")
     @classmethod
     def must_not_be_empty(cls, v: str) -> str:
-        if not v.strip():
+        if isinstance(v, str) and not v.strip():
             raise ValueError("Поле не может быть пустой строкой")
-        return v.strip()
+        return v.strip() if isinstance(v, str) else v
 
-    def to_db_tuple(self) -> tuple:
-        return (self.id, self.postId, self.name, str(self.email), self.body)
+    model_config = ConfigDict(populate_by_name=True)

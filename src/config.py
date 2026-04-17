@@ -3,7 +3,9 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH: str = os.getenv("DB_PATH", str(BASE_DIR / "data_normalized.db"))
+DB_PATH: str = os.getenv("DB_PATH", str(BASE_DIR / "jsonplaceholder.db"))
+DATABASE_URL: str = f"sqlite:///{DB_PATH}"
+SQL_ECHO: bool = False
 
 API_BASE_URL: str = "https://jsonplaceholder.typicode.com"
 

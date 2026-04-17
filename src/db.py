@@ -1,53 +1,33 @@
 import logging
-import sqlite3
 from contextlib import contextmanager
 from typing import Generator
 
+import sqlalchemy
+from sqlmodel import Session, create_engine
 from src import config
 from src.exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
 
+engine = create_engine(config.DATABASE_URL, echo=config.SQL_ECHO, connect_args={"check_same_thread": False})
+
+
+@sqlalchemy.event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.close()
+
 
 @contextmanager
-def get_connection() -> Generator[sqlite3.Connection, None, None]:
-    conn: sqlite3.Connection | None = None
-    try:
-        conn = sqlite3.connect(config.DB_PATH, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA journal_mode = WAL")
-
-        # Начинаем транзакцию вручную. Это гарантирует, что все последующие
-        # изменения будут атомарными до вызова COMMIT.
-        conn.execute("BEGIN")
-        logger.debug("SQLite-соединение открыто: %s", config.DB_PATH)
-
-        yield conn
-
-        conn.execute("COMMIT")
-        logger.debug("Транзакция зафиксирована (COMMIT)")
-
-    except sqlite3.Error as exc:
-        if conn:
-            try:
-                conn.execute("ROLLBACK")
-                logger.warning("Транзакция откатана (ROLLBACK) из-за ошибки SQLite: %s", exc)
-            except sqlite3.Error as rollback_exc:
-                logger.error("Критическая ошибка: не удалось выполнить ROLLBACK: %s", rollback_exc)
-        raise DatabaseError(f"Ошибка SQLite: {exc}") from exc
-
-    except Exception as exc:
-        if conn:
-            try:
-                conn.execute("ROLLBACK")
-                logger.warning("Транзакция откатана (ROLLBACK) из-за исключения: %s", exc)
-            except sqlite3.Error as rollback_exc:
-                logger.error("Критическая ошибка: не удалось выполнить ROLLBACK: %s", rollback_exc)
-        raise
-
-    finally:
-        if conn:
-            conn.close()
-            logger.debug("SQLite-соединение закрыто")
+def get_session() -> Generator[Session, None, None]:
+    with Session(engine) as session:
+        try:
+            yield session
+        except sqlalchemy.exc.SQLAlchemyError as exc:
+            logger.error("Ошибка уровня базы данных: %s", exc)
+            raise DatabaseError(f"Ошибка БД: {exc}") from exc
+        except Exception:
+            logger.error("Непредвиденная системная ошибка в сессии")
+            raise

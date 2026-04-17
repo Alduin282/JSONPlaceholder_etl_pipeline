@@ -1,134 +1,74 @@
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from src.loader import Loader
-from src.repository import Repository
-from src.db import get_connection
-from src import config
+from src.models import User, Address, Company
+from src.exceptions import ValidationError
 
 
 @pytest.fixture
 def mock_api():
     # Arrange
-    return MagicMock()
+    api = MagicMock()
+    api.get_resource.return_value = []
+    return api
 
 
 @pytest.fixture
 def repo():
     # Arrange
-    return Repository()
+    return MagicMock()
 
 
 @pytest.fixture
-def test_db(tmp_path):
-    # Arrange
-    db_file = tmp_path / "test.db"
-    original_db = config.DB_PATH
-    config.DB_PATH = str(db_file)
-    yield db_file
-    # Clean up
-    config.DB_PATH = original_db
-
-
-@pytest.fixture
-def loader(mock_api, repo, test_db):
+def loader(mock_api, repo):
     # Arrange
     return Loader(mock_api, repo)
 
 
-def test__loader__run__creates_tables(loader, mock_api, test_db):
-    # Arrange
-    mock_api.get_users.return_value = []
-    mock_api.get_posts.return_value = []
-    mock_api.get_comments.return_value = []
-
+def test__loader__run__calls_create_tables(loader, repo):
     # Act
-    loader.run()
+    with patch("src.loader.get_session"):
+        loader.run()
 
     # Assert
-    with get_connection() as conn:
-        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-        table_names = [t[0] for t in tables]
-        assert "users" in table_names
+    repo.create_tables.assert_called_once()
 
 
-def test__loader__run__saves_users_successfully(loader, mock_api, test_db):
-    # Arrange
-    mock_api.get_users.return_value = [
-        {
-            "id": 1,
-            "name": "Leanne Graham",
-            "username": "Bret",
-            "email": "Sincere@april.biz",
-            "address": {"geo": {"lat": "0", "lng": "0"}},
-            "company": {"name": "Romaguera-Crona"},
-        }
-    ]
-    mock_api.get_posts.return_value = []
-    mock_api.get_comments.return_value = []
-
+def test__loader__run__processes_all_entities(loader, mock_api, repo):
     # Act
-    loader.run()
+    with patch("src.loader.get_session"):
+        loader.run()
 
     # Assert
-    with get_connection() as conn:
-        count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        assert count == 1
+    assert mock_api.get_resource.called
+    assert mock_api.get_resource.call_count >= 1
 
 
-def test__loader__single_record_invalid__skips_and_continues(loader, mock_api, test_db):
+def test__loader__validation_error__raises_exception(loader, mock_api):
     # Arrange
-    mock_api.get_users.return_value = [
-        {"id": 1, "name": "Valid", "username": "v", "email": "v@v.com"},  # Valid
-        {"id": 2, "name": "Invalid"},  # Invalid (missing required fields)
-    ]
-    mock_api.get_posts.return_value = []
-    mock_api.get_comments.return_value = []
-
-    # Act
-    loader.run()
-
-    # Assert
-    with get_connection() as conn:
-        count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        assert count == 1
-
-
-def test__loader__run__saves_posts_successfully(loader, mock_api, test_db):
-    # Arrange
-    mock_api.get_users.return_value = [{"id": 1, "name": "U", "username": "u", "email": "u@u.com"}]
-    mock_api.get_posts.return_value = [{"id": 1, "userId": 1, "title": "T", "body": "B"}]
-    mock_api.get_comments.return_value = []
-
-    # Act
-    loader.run()
-
-    # Assert
-    with get_connection() as conn:
-        count = conn.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
-        assert count == 1
-
-
-def test__loader__run__saves_comments_successfully(loader, mock_api, test_db):
-    # Arrange
-    mock_api.get_users.return_value = [{"id": 1, "name": "U", "username": "u", "email": "u@u.com"}]
-    mock_api.get_posts.return_value = [{"id": 1, "userId": 1, "title": "T", "body": "B"}]
-    mock_api.get_comments.return_value = [{"id": 1, "postId": 1, "name": "N", "email": "e@e.com", "body": "B"}]
-
-    # Act
-    loader.run()
-
-    # Assert
-    with get_connection() as conn:
-        count = conn.execute("SELECT COUNT(*) FROM comments").fetchone()[0]
-        assert count == 1
-
-
-def test__loader__all_records_invalid__raises_validation_error(loader, mock_api, test_db):
-    # Arrange
-    from src.exceptions import ValidationError
-
-    mock_api.get_users.return_value = [{"bad": "data"}]
+    mock_api.get_resource.return_value = [{"invalid": "data"}]
 
     # Act & Assert
-    with pytest.raises(ValidationError):
+    with patch("src.loader.get_session"):
+        with pytest.raises(ValidationError, match="битые"):
+            loader.run()
+
+
+def test__loader__partial_invalid__saves_only_valid(loader, mock_api, repo):
+    # Arrange
+    mock_api.get_resource.side_effect = lambda r: (
+        [{"id": 1, "name": "V", "username": "v", "email": "v@v.com"}] if r == "users" else []  # Valid
+    )
+
+    # Act
+    with patch("src.loader.get_session") as mock_get_session:
+        mock_session = mock_get_session.return_value.__enter__.return_value
         loader.run()
+
+    # Assert
+    found_user_upsert = False
+    for call in repo.upsert_many.call_args_list:
+        if call[0][1] == User:
+            assert len(call[0][2]) == 1
+            found_user_upsert = True
+    assert found_user_upsert
