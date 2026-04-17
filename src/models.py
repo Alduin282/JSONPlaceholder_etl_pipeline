@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List
 from pydantic import field_validator, ConfigDict, EmailStr, model_validator
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -13,13 +13,17 @@ class User(SQLModel, table=True):
     phone: str = ""
     website: str = ""
 
-    address: Optional["Address"] = Relationship(
-        back_populates="user", sa_relationship_kwargs={"cascade": "all, delete-orphan", "uselist": False}
+    address: "Address" = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "uselist": False},
     )
-    company: Optional["Company"] = Relationship(
-        back_populates="user", sa_relationship_kwargs={"cascade": "all, delete-orphan", "uselist": False}
+    company: "Company" = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "uselist": False},
     )
-    posts: List["Post"] = Relationship(back_populates="user", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    posts: List["Post"] = Relationship(
+        back_populates="user", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
 
     @field_validator("name", "username")
     @classmethod
@@ -27,6 +31,16 @@ class User(SQLModel, table=True):
         if isinstance(v, str) and not v.strip():
             raise ValueError("Поле не может быть пустой строкой")
         return v.strip() if isinstance(v, str) else v
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_relationships(cls, data: any) -> any:
+        if isinstance(data, dict):
+            if "address" not in data or data["address"] is None:
+                raise ValueError("Поле address обязательно")
+            if "company" not in data or data["company"] is None:
+                raise ValueError("Поле company обязательно")
+        return data
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -43,7 +57,7 @@ class Address(SQLModel, table=True):
     geo_lat: str = ""
     geo_lng: str = ""
 
-    user: Optional["User"] = Relationship(back_populates="address")
+    user: "User" = Relationship(back_populates="address")
 
     @model_validator(mode="before")
     @classmethod
@@ -63,7 +77,7 @@ class Company(SQLModel, table=True):
     catch_phrase: str = Field(default="", alias="catchPhrase")
     bs: str = ""
 
-    user: Optional["User"] = Relationship(back_populates="company")
+    user: "User" = Relationship(back_populates="company")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -76,7 +90,7 @@ class Post(SQLModel, table=True):
     title: str
     body: str
 
-    user: Optional["User"] = Relationship(back_populates="posts")
+    user: "User" = Relationship(back_populates="posts")
     comments: List["Comment"] = Relationship(
         back_populates="post", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
@@ -100,7 +114,7 @@ class Comment(SQLModel, table=True):
     email: EmailStr
     body: str
 
-    post: Optional["Post"] = Relationship(back_populates="comments")
+    post: "Post" = Relationship(back_populates="comments")
 
     @field_validator("name", "body")
     @classmethod

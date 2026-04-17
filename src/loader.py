@@ -18,51 +18,68 @@ class Loader:
         self._api_client = api_client
         self._repository = repository
 
-        self._registry = [
+        self._load_jobs = [
             {
                 "resource": "users",
                 "model": User,
-                "storage": [
-                    (User, lambda m: m.model_dump(exclude={"address", "company"})),
-                    (
-                        Address,
-                        lambda m: (
-                            {
-                                "user_id": m.id,
-                                **m.address.model_dump(exclude={"geo"}),
-                                "geo_lat": m.address.geo_lat,
-                                "geo_lng": m.address.geo_lng,
-                            }
-                            if m.address
-                            else None
-                        ),
-                    ),
-                    (Company, lambda m: {"user_id": m.id, **m.company.model_dump()} if m.company else None),
+                "mappings": [
+                    (User, self._map_user_base),
+                    (Address, self._map_user_address),
+                    (Company, self._map_user_company),
                 ],
             },
-            {"resource": "posts", "model": Post, "storage": [(Post, lambda m: m.model_dump())]},
-            {"resource": "comments", "model": Comment, "storage": [(Comment, lambda m: m.model_dump())]},
+            {
+                "resource": "posts",
+                "model": Post,
+                "mappings": [(Post, self._map_simple)],
+            },
+            {
+                "resource": "comments",
+                "model": Comment,
+                "mappings": [(Comment, self._map_simple)],
+            },
         ]
+
+    def _map_user_base(self, user: User):
+        return user.model_dump(exclude={"address", "company"})
+
+    def _map_user_address(self, user: User):
+        if not user.address:
+            return None
+        return {
+            "user_id": user.id,
+            **user.address.model_dump(exclude={"geo"}),
+            "geo_lat": user.address.geo_lat,
+            "geo_lng": user.address.geo_lng,
+        }
+
+    def _map_user_company(self, user: User):
+        if not user.company:
+            return None
+        return {"user_id": user.id, **user.company.model_dump()}
+
+    def _map_simple(self, model_obj):
+        return model_obj.model_dump()
 
     def run(self) -> None:
         self._repository.create_tables(engine)
 
         with get_session() as session:
             with session.begin():
-                for entity in self._registry:
-                    self._process_entity(session, entity)
+                for load_job in self._load_jobs:
+                    self._process_entity(session, load_job)
 
-    def _process_entity(self, session: Session, config: Dict[str, Any]) -> None:
-        resource = config["resource"]
+    def _process_entity(self, session: Session, load_job: Dict[str, Any]) -> None:
+        resource = load_job["resource"]
         raw_data = self._api_client.get_resource(resource)
-        model_cls = config["model"]
+        model_class = load_job["model"]
 
         valid_models = []
         errors_count = 0
 
         for item in raw_data:
             try:
-                valid_models.append(model_cls.model_validate(item))
+                valid_models.append(model_class.model_validate(item))
             except PydanticValidationError as e:
                 errors_count += 1
                 logger.warning("Ошибка в %s: %s", resource, e)
@@ -70,10 +87,13 @@ class Loader:
         if raw_data and errors_count == len(raw_data):
             raise ValidationError(f"Все записи {resource} битые")
 
-        for db_class, mapper in config["storage"]:
-            # Пропускаем записи, для которых mapper вернул None (например, если нет адреса)
-            db_records = [rec for m in valid_models if (rec := mapper(m)) is not None]
+        for db_model_class, mapper in load_job["mappings"]:
+            db_records = [
+                record
+                for model in valid_models
+                if (record := mapper(model)) is not None
+            ]
             if db_records:
-                self._repository.upsert_many(session, db_class, db_records)
+                self._repository.upsert_many(session, db_model_class, db_records)
 
         logger.info("Загружено %s: %d записей", resource, len(valid_models))

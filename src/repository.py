@@ -12,23 +12,27 @@ class Repository:
         SQLModel.metadata.create_all(engine)
         logger.info("Схема БД синхронизирована")
 
-    def upsert_many(self, session: Session, model_class: Any, data: List[Dict[str, Any]]) -> int:
-        if not data:
+    def upsert_many(
+        self, session: Session, model_class: Any, records: List[Dict[str, Any]]
+    ) -> int:
+        if not records:
             return 0
 
-        # Базовый стейтмент вставки
-        stmt = insert(model_class).values(data)
+        statement = insert(model_class).values(records)
 
-        # Получаем информацию о модели через интроспекцию
         mapper = inspect(model_class)
         primary_keys = [key.name for key in mapper.primary_key]
 
-        # Формируем словарь полей для обновления при конфликте (все кроме PK)
-        update_cols = {col.name: stmt.excluded[col.name] for col in mapper.columns if col.name not in primary_keys}
+        update_columns = {
+            column.name: statement.excluded[column.name]
+            for column in mapper.columns
+            if column.name not in primary_keys
+        }
 
-        # Добавляем логику ON CONFLICT для SQLite
-        upsert_stmt = stmt.on_conflict_do_update(index_elements=primary_keys, set_=update_cols)
+        upsert_statement = statement.on_conflict_do_update(
+            index_elements=primary_keys, set_=update_columns
+        )
 
-        session.execute(upsert_stmt)
-        logger.debug("UPSERT %s: %d записей", model_class.__name__, len(data))
-        return len(data)
+        session.exec(upsert_statement)
+        logger.debug("UPSERT %s: %d записей", model_class.__name__, len(records))
+        return len(records)

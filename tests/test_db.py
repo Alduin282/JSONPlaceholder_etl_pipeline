@@ -28,7 +28,7 @@ def test__db__get_session__provides_active_session():
 def test__db__sqlite_pragmas__foreign_keys_enabled():
     # Act
     with get_session() as session:
-        result = session.execute(text("PRAGMA foreign_keys")).fetchone()
+        result = session.exec(text("PRAGMA foreign_keys")).fetchone()
         # Assert
         assert result[0] == 1
 
@@ -36,6 +36,6 @@ def test__db__sqlite_pragmas__foreign_keys_enabled():
 def test__db__sqlite_pragmas__wal_mode_enabled():
     # Act
     with get_session() as session:
-        result = session.execute(text("PRAGMA journal_mode")).fetchone()
+        result = session.exec(text("PRAGMA journal_mode")).fetchone()
         # Assert
         assert result[0].lower() == "wal"

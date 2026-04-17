@@ -9,7 +9,9 @@ from src.exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
 
-engine = create_engine(config.DATABASE_URL, echo=config.SQL_ECHO, connect_args={"check_same_thread": False})
+engine = create_engine(
+    config.DATABASE_URL, echo=config.SQL_ECHO, connect_args={"check_same_thread": False}
+)
 
 
 @sqlalchemy.event.listens_for(engine, "connect")

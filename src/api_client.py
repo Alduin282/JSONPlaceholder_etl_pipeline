@@ -35,7 +35,7 @@ class ApiClient:
     def __enter__(self) -> "ApiClient":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self._session.close()
 
     def get_resource(self, resource_name: str) -> List[Dict[str, Any]]:
@@ -46,11 +46,17 @@ class ApiClient:
             response.raise_for_status()
 
             data = response.json()
-            logger.info("Успешно получено %d записей для ресурса '%s'", len(data), resource_name)
+            logger.info(
+                "Успешно получено %d записей для ресурса '%s'", len(data), resource_name
+            )
             return data
 
         except requests.exceptions.HTTPError as exc:
             status = getattr(exc.response, "status_code", "N/A")
-            raise ApiError(f"HTTP ошибка {status} для {resource_name}: {exc}", status_code=status) from exc
+            raise ApiError(
+                f"HTTP ошибка {status} для {resource_name}: {exc}", status_code=status
+            ) from exc
         except requests.exceptions.RequestException as exc:
-            raise ApiError(f"Ошибка соединения при запросе {resource_name}: {exc}") from exc
+            raise ApiError(
+                f"Ошибка соединения при запросе {resource_name}: {exc}"
+            ) from exc
