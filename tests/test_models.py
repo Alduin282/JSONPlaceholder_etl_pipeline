@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from src.models import User, Comment
+from src.models import User, Post, Comment, Address
 
 
 @pytest.fixture
@@ -25,6 +25,29 @@ def valid_user_data():
             "catchPhrase": "Multi-layered client-server neural-net",
             "bs": "harness real-time e-markets",
         },
+    }
+
+
+@pytest.fixture
+def valid_post_data():
+    # Arrange
+    return {
+        "id": 1,
+        "userId": 1,
+        "title": "Valid Title",
+        "body": "Valid Body",
+    }
+
+
+@pytest.fixture
+def valid_comment_data():
+    # Arrange
+    return {
+        "id": 1,
+        "postId": 1,
+        "name": "Valid Name",
+        "email": "valid@example.com",
+        "body": "Valid Body",
     }
 
 
@@ -66,15 +89,58 @@ def test__user_model__invalid_email__raises_validation_error(valid_user_data):
 def test__comment_model__invalid_email__raises_validation_error():
     # Arrange & Act & Assert
     with pytest.raises(ValidationError):
-        Comment.model_validate({"id": 1, "postId": 2, "name": "N", "email": "not-an-email", "body": "B"})
+        Comment.model_validate(
+            {"id": 1, "postId": 2, "name": "N", "email": "not-an-email", "body": "B"}
+        )
 
 
-def test__user_model__whitespace_name__stripped(valid_user_data):
+def test__user_model__empty_name__raises_error(valid_user_data):
     # Arrange
-    valid_user_data["name"] = "  John  "
+    valid_user_data["name"] = "   "
+
+    # Act & Assert
+    with pytest.raises(ValidationError):
+        User.model_validate(valid_user_data)
+
+
+def test__user_model__empty_address__raises_error(valid_user_data):
+    # Arrange
+    valid_user_data["address"] = None
+
+    # Act & Assert
+    with pytest.raises(ValidationError):
+        User.model_validate(valid_user_data)
+
+
+def test__post_model__empty_title__raises_error(valid_post_data):
+    # Arrange
+    valid_post_data["title"] = ""
+
+    # Act & Assert
+    with pytest.raises(ValidationError):
+        Post.model_validate(valid_post_data)
+
+
+def test__comment_model__empty_body__raises_error(valid_comment_data):
+    # Arrange
+    valid_comment_data["body"] = " \n "
+
+    # Act & Assert
+    with pytest.raises(ValidationError):
+        Comment.model_validate(valid_comment_data)
+
+
+def test__address_model__flatten_geo__maps_lat_lng():
+    # Arrange
+    data = {
+        "user_id": 1,
+        "street": "S",
+        "geo": {"lat": "1.23", "lng": "4.56"},
+    }
 
     # Act
-    user = User.model_validate(valid_user_data)
+    address = Address.model_validate(data)
 
     # Assert
-    assert user.name == "John"
+    assert address.geo_lat == "1.23"
+    assert address.geo_lng == "4.56"

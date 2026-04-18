@@ -1,6 +1,7 @@
 import logging
 import sys
 
+from src import config
 from src.api_client import ApiClient
 from src.config import LOG_DATE_FORMAT, LOG_FORMAT, LOG_LEVEL
 from src.exceptions import (
@@ -9,8 +10,7 @@ from src.exceptions import (
     DatabaseError,
     ValidationError,
 )
-from src.loader import Loader
-from src.repository import Repository
+from src.loader import Loader, get_repository
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -35,7 +35,7 @@ def main() -> None:
 
     try:
         with ApiClient() as api_client:
-            repository = Repository()
+            repository = get_repository(config.DATABASE_URL)
             loader = Loader(api_client=api_client, repository=repository)
             loader.run()
 

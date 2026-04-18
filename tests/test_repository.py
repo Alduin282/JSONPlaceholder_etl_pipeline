@@ -1,20 +1,19 @@
 import pytest
 from sqlalchemy import text
 from sqlmodel import Session, create_engine, SQLModel
-from src.repository import Repository
+from src.repository import SQLiteRepository
 from src.models import User, Post, Comment
 
 
 @pytest.fixture
 def repo():
     # Arrange
-    return Repository()
+    return SQLiteRepository()
 
 
 @pytest.fixture
 def session(repo):
     # Arrange
-    # Для тестов используем базу в памяти
     engine = create_engine("sqlite:///:memory:")
     from sqlalchemy import event
 
@@ -24,7 +23,6 @@ def session(repo):
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
-    # Схема создается через SQLModel
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as session:
@@ -71,8 +69,12 @@ def test__repository__upsert_many__empty_list__returns_zero(repo, session):
 def test__repository__cascade_delete__user_removed__posts_removed(repo, session):
     # Arrange
     with session.begin():
-        repo.upsert_many(session, User, [{"id": 1, "name": "U", "username": "u", "email": "e@e.com"}])
-        repo.upsert_many(session, Post, [{"id": 10, "user_id": 1, "title": "T", "body": "B"}])
+        repo.upsert_many(
+            session, User, [{"id": 1, "name": "U", "username": "u", "email": "e@e.com"}]
+        )
+        repo.upsert_many(
+            session, Post, [{"id": 10, "user_id": 1, "title": "T", "body": "B"}]
+        )
 
     # Act
     with session.begin():
@@ -80,16 +82,26 @@ def test__repository__cascade_delete__user_removed__posts_removed(repo, session)
         session.delete(user)
 
     # Assert
-    count = session.execute(text("SELECT COUNT(*) FROM posts WHERE id=10")).fetchone()[0]
+    count = session.execute(text("SELECT COUNT(*) FROM posts WHERE id=10")).fetchone()[
+        0
+    ]
     assert count == 0
 
 
 def test__repository__cascade_delete__post_removed__comments_removed(repo, session):
     # Arrange
     with session.begin():
-        repo.upsert_many(session, User, [{"id": 1, "name": "U", "username": "u", "email": "e@e.com"}])
-        repo.upsert_many(session, Post, [{"id": 10, "user_id": 1, "title": "T", "body": "B"}])
-        repo.upsert_many(session, Comment, [{"id": 100, "post_id": 10, "name": "C", "email": "c@c.com", "body": "B"}])
+        repo.upsert_many(
+            session, User, [{"id": 1, "name": "U", "username": "u", "email": "e@e.com"}]
+        )
+        repo.upsert_many(
+            session, Post, [{"id": 10, "user_id": 1, "title": "T", "body": "B"}]
+        )
+        repo.upsert_many(
+            session,
+            Comment,
+            [{"id": 100, "post_id": 10, "name": "C", "email": "c@c.com", "body": "B"}],
+        )
 
     # Act
     with session.begin():
@@ -97,5 +109,7 @@ def test__repository__cascade_delete__post_removed__comments_removed(repo, sessi
         session.delete(post)
 
     # Assert
-    count = session.execute(text("SELECT COUNT(*) FROM comments WHERE id=100")).fetchone()[0]
+    count = session.execute(
+        text("SELECT COUNT(*) FROM comments WHERE id=100")
+    ).fetchone()[0]
     assert count == 0

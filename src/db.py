@@ -9,17 +9,25 @@ from src.exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
 
-engine = create_engine(
-    config.DATABASE_URL, echo=config.SQL_ECHO, connect_args={"check_same_thread": False}
-)
+
+def get_engine_args(url: str) -> dict:
+    args = {"echo": config.SQL_ECHO}
+    if url.startswith("sqlite"):
+        args["connect_args"] = {"check_same_thread": False}
+    return args
+
+
+engine = create_engine(config.DATABASE_URL, **get_engine_args(config.DATABASE_URL))
 
 
 @sqlalchemy.event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.close()
+    if config.DATABASE_URL.startswith("sqlite"):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.close()
+        logger.debug("SQLite PRAGMAs applied (FK=ON, WAL)")
 
 
 @contextmanager
