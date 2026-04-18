@@ -1,8 +1,11 @@
+from contextlib import contextmanager
 import pytest
 from unittest.mock import MagicMock, patch, ANY
+from sqlalchemy import event, text
+from sqlmodel import Session, create_engine
 from src.loader import Loader
-from src.repository import BaseRepository
-from src.models import User, Address, Company
+from src.repository import BaseRepository, SQLiteRepository
+from src.models import User, Address, Company, Post, Comment
 from src.exceptions import ValidationError
 
 
@@ -46,6 +49,36 @@ def valid_user_raw():
 
 
 @pytest.fixture
+def valid_post_raw(valid_user_raw):
+    return {
+        "id": 10,
+        "userId": valid_user_raw["id"],
+        "title": "Post title",
+        "body": "Post body",
+    }
+
+
+@pytest.fixture
+def valid_comment_raw(valid_post_raw):
+    return {
+        "id": 100,
+        "postId": valid_post_raw["id"],
+        "name": "Comment name",
+        "email": "comment@example.com",
+        "body": "Comment body",
+    }
+
+
+@pytest.fixture
+def full_api_payload(valid_user_raw, valid_post_raw, valid_comment_raw):
+    return {
+        "users": [valid_user_raw],
+        "posts": [valid_post_raw],
+        "comments": [valid_comment_raw],
+    }
+
+
+@pytest.fixture
 def expected_user_record():
     return {
         "id": 1,
@@ -84,6 +117,20 @@ def expected_company_record(valid_user_raw):
 
 def assert_upsert_called(repo, model_class, expected_records):
     repo.upsert_many.assert_any_call(ANY, model_class, expected_records)
+
+
+@pytest.fixture
+def sqlite_test_engine(tmp_path):
+    db_file = tmp_path / "loader-test.db"
+    engine = create_engine(f"sqlite:///{db_file}", connect_args={"check_same_thread": False})
+
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    return engine
 
 
 def test__loader__run__calls_create_tables(loader, repo):
@@ -154,3 +201,58 @@ def test__loader__users__loads_address_and_company(
     # Assert
     assert_upsert_called(repo, Address, [expected_address_record])
     assert_upsert_called(repo, Company, [expected_company_record])
+
+
+def test__loader__run__preserves_resource_and_table_order(
+    loader, mock_api, repo, full_api_payload
+):
+    # Arrange
+    mock_api.get_resource.side_effect = lambda resource: full_api_payload[resource]
+
+    # Act
+    with patch("src.loader.get_session"):
+        loader.run()
+
+    # Assert
+    assert [call.args[0] for call in mock_api.get_resource.call_args_list] == [
+        "users",
+        "posts",
+        "comments",
+    ]
+    assert [call.args[1] for call in repo.upsert_many.call_args_list] == [
+        User,
+        Address,
+        Company,
+        Post,
+        Comment,
+    ]
+
+
+def test__loader__run_twice__does_not_create_duplicates(
+    full_api_payload, sqlite_test_engine
+):
+    # Arrange
+    api_client = MagicMock()
+    api_client.get_resource.side_effect = lambda resource: full_api_payload[resource]
+    loader = Loader(api_client, SQLiteRepository())
+
+    @contextmanager
+    def test_session():
+        with Session(sqlite_test_engine) as session:
+            yield session
+
+    # Act
+    with (
+        patch("src.loader.engine", sqlite_test_engine),
+        patch("src.loader.get_session", test_session),
+    ):
+        loader.run()
+        loader.run()
+
+    # Assert
+    with Session(sqlite_test_engine) as session:
+        assert session.exec(text("SELECT COUNT(*) FROM users")).one()[0] == 1
+        assert session.exec(text("SELECT COUNT(*) FROM user_addresses")).one()[0] == 1
+        assert session.exec(text("SELECT COUNT(*) FROM user_companies")).one()[0] == 1
+        assert session.exec(text("SELECT COUNT(*) FROM posts")).one()[0] == 1
+        assert session.exec(text("SELECT COUNT(*) FROM comments")).one()[0] == 1
