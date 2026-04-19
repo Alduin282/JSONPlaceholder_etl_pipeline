@@ -53,6 +53,30 @@ python main.py
 
 После выполнения в корне проекта появится файл базы (по умолчанию `jsonplaceholder.db`).
 
+### Быстрый старт для macOS
+
+1) Установите Python 3.10+ через официальный установщик или Homebrew:
+
+```bash
+# Через Homebrew
+brew install python
+```
+
+2) Создайте виртуальное окружение и активируйте его:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+3) Запустите ETL:
+
+```bash
+python main.py
+```
+
 ## Конфигурация
 
 Все настройки находятся в `src/config.py`:
