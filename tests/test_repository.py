@@ -1,3 +1,5 @@
+from typing import Any, Iterator
+
 import pytest
 from sqlalchemy import text
 from sqlmodel import Session, create_engine, SQLModel
@@ -6,19 +8,19 @@ from src.models import User, Post, Comment
 
 
 @pytest.fixture
-def repo():
+def repo() -> SQLiteRepository:
     # Arrange
     return SQLiteRepository()
 
 
 @pytest.fixture
-def session(repo):
+def session(repo: SQLiteRepository) -> Iterator[Session]:
     # Arrange
     engine = create_engine("sqlite:///:memory:")
     from sqlalchemy import event
 
     @event.listens_for(engine, "connect")
-    def set_sqlite_pragma(dbapi_connection, connection_record):
+    def set_sqlite_pragma(dbapi_connection: Any, connection_record: Any) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
@@ -29,7 +31,9 @@ def session(repo):
         yield session
 
 
-def test__repository__upsert_many__new_data__inserted(repo, session):
+def test__repository__upsert_many__new_data__inserted(
+    repo: SQLiteRepository, session: Session
+) -> None:
     # Arrange
     data = [{"id": 1, "name": "Init", "username": "i", "email": "i@i.com"}]
 
@@ -42,7 +46,9 @@ def test__repository__upsert_many__new_data__inserted(repo, session):
     assert row[0] == "Init"
 
 
-def test__repository__upsert_many__existing_id__updated(repo, session):
+def test__repository__upsert_many__existing_id__updated(
+    repo: SQLiteRepository, session: Session
+) -> None:
     # Arrange
     data1 = [{"id": 1, "name": "Old", "username": "u", "email": "e@e.com"}]
     data2 = [{"id": 1, "name": "New", "username": "u", "email": "e@e.com"}]
@@ -58,7 +64,9 @@ def test__repository__upsert_many__existing_id__updated(repo, session):
     assert row[0] == "New"
 
 
-def test__repository__upsert_many__empty_list__returns_zero(repo, session):
+def test__repository__upsert_many__empty_list__returns_zero(
+    repo: SQLiteRepository, session: Session
+) -> None:
     # Act
     result = repo.upsert_many(session, User, [])
 
@@ -66,7 +74,9 @@ def test__repository__upsert_many__empty_list__returns_zero(repo, session):
     assert result == 0
 
 
-def test__repository__cascade_delete__user_removed__posts_removed(repo, session):
+def test__repository__cascade_delete__user_removed__posts_removed(
+    repo: SQLiteRepository, session: Session
+) -> None:
     # Arrange
     with session.begin():
         repo.upsert_many(
@@ -88,7 +98,9 @@ def test__repository__cascade_delete__user_removed__posts_removed(repo, session)
     assert count == 0
 
 
-def test__repository__cascade_delete__post_removed__comments_removed(repo, session):
+def test__repository__cascade_delete__post_removed__comments_removed(
+    repo: SQLiteRepository, session: Session
+) -> None:
     # Arrange
     with session.begin():
         repo.upsert_many(

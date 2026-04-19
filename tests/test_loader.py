@@ -1,6 +1,9 @@
 from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Iterator
 import pytest
 from unittest.mock import MagicMock, patch, ANY
+from sqlalchemy.engine import Engine
 from sqlalchemy import event, text
 from sqlmodel import Session, create_engine
 from src.loader import Loader
@@ -10,24 +13,24 @@ from src.exceptions import ValidationError
 
 
 @pytest.fixture
-def mock_api():
+def mock_api() -> MagicMock:
     api = MagicMock()
     api.get_resource.return_value = []
     return api
 
 
 @pytest.fixture
-def repo():
+def repo() -> MagicMock:
     return MagicMock(spec=BaseRepository)
 
 
 @pytest.fixture
-def loader(mock_api, repo):
+def loader(mock_api: MagicMock, repo: MagicMock) -> Loader:
     return Loader(mock_api, repo)
 
 
 @pytest.fixture
-def valid_user_raw():
+def valid_user_raw() -> dict[str, Any]:
     return {
         "id": 1,
         "name": "Valid User",
@@ -49,7 +52,7 @@ def valid_user_raw():
 
 
 @pytest.fixture
-def valid_post_raw(valid_user_raw):
+def valid_post_raw(valid_user_raw: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": 10,
         "userId": valid_user_raw["id"],
@@ -59,7 +62,7 @@ def valid_post_raw(valid_user_raw):
 
 
 @pytest.fixture
-def valid_comment_raw(valid_post_raw):
+def valid_comment_raw(valid_post_raw: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": 100,
         "postId": valid_post_raw["id"],
@@ -70,7 +73,11 @@ def valid_comment_raw(valid_post_raw):
 
 
 @pytest.fixture
-def full_api_payload(valid_user_raw, valid_post_raw, valid_comment_raw):
+def full_api_payload(
+    valid_user_raw: dict[str, Any],
+    valid_post_raw: dict[str, Any],
+    valid_comment_raw: dict[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
     return {
         "users": [valid_user_raw],
         "posts": [valid_post_raw],
@@ -79,7 +86,7 @@ def full_api_payload(valid_user_raw, valid_post_raw, valid_comment_raw):
 
 
 @pytest.fixture
-def expected_user_record():
+def expected_user_record() -> dict[str, Any]:
     return {
         "id": 1,
         "name": "Valid User",
@@ -91,7 +98,7 @@ def expected_user_record():
 
 
 @pytest.fixture
-def expected_address_record(valid_user_raw):
+def expected_address_record(valid_user_raw: dict[str, Any]) -> dict[str, Any]:
     address = valid_user_raw["address"]
     return {
         "user_id": valid_user_raw["id"],
@@ -99,13 +106,13 @@ def expected_address_record(valid_user_raw):
         "suite": address["suite"],
         "city": address["city"],
         "zipcode": address["zipcode"],
-        "geo_lat": address["geo"]["lat"],
-        "geo_lng": address["geo"]["lng"],
+        "geo_lat": float(address["geo"]["lat"]),
+        "geo_lng": float(address["geo"]["lng"]),
     }
 
 
 @pytest.fixture
-def expected_company_record(valid_user_raw):
+def expected_company_record(valid_user_raw: dict[str, Any]) -> dict[str, Any]:
     company = valid_user_raw["company"]
     return {
         "user_id": valid_user_raw["id"],
@@ -115,17 +122,19 @@ def expected_company_record(valid_user_raw):
     }
 
 
-def assert_upsert_called(repo, model_class, expected_records):
+def assert_upsert_called(
+    repo: MagicMock, model_class: type[Any], expected_records: list[dict[str, Any]]
+) -> None:
     repo.upsert_many.assert_any_call(ANY, model_class, expected_records)
 
 
 @pytest.fixture
-def sqlite_test_engine(tmp_path):
+def sqlite_test_engine(tmp_path: Path) -> Engine:
     db_file = tmp_path / "loader-test.db"
     engine = create_engine(f"sqlite:///{db_file}", connect_args={"check_same_thread": False})
 
     @event.listens_for(engine, "connect")
-    def set_sqlite_pragma(dbapi_connection, _connection_record):
+    def set_sqlite_pragma(dbapi_connection: Any, _connection_record: Any) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
@@ -133,7 +142,7 @@ def sqlite_test_engine(tmp_path):
     return engine
 
 
-def test__loader__run__calls_create_tables(loader, repo):
+def test__loader__run__calls_create_tables(loader: Loader, repo: MagicMock) -> None:
     # Act
     with patch("src.loader.get_session"):
         loader.run()
@@ -142,7 +151,9 @@ def test__loader__run__calls_create_tables(loader, repo):
     repo.create_tables.assert_called_once()
 
 
-def test__loader__run__processes_all_entities(loader, mock_api, repo):
+def test__loader__run__processes_all_entities(
+    loader: Loader, mock_api: MagicMock, repo: MagicMock
+) -> None:
     # Act
     with patch("src.loader.get_session"):
         loader.run()
@@ -152,7 +163,9 @@ def test__loader__run__processes_all_entities(loader, mock_api, repo):
     assert mock_api.get_resource.call_count == len(loader._load_jobs)
 
 
-def test__loader__validation_error__raises_exception(loader, mock_api):
+def test__loader__validation_error__raises_exception(
+    loader: Loader, mock_api: MagicMock
+) -> None:
     # Arrange
     mock_api.get_resource.return_value = [{"invalid": "data"}]
 
@@ -163,14 +176,14 @@ def test__loader__validation_error__raises_exception(loader, mock_api):
 
 
 def test__loader__partial_invalid__saves_only_valid(
-    loader,
-    mock_api,
-    repo,
-    valid_user_raw,
-    expected_user_record,
-    expected_address_record,
-    expected_company_record,
-):
+    loader: Loader,
+    mock_api: MagicMock,
+    repo: MagicMock,
+    valid_user_raw: dict[str, Any],
+    expected_user_record: dict[str, Any],
+    expected_address_record: dict[str, Any],
+    expected_company_record: dict[str, Any],
+) -> None:
     # Arrange
     invalid_user = {"id": 2, "name": "", "username": "inv", "email": "i@e.com"}
     mock_api.get_resource.side_effect = lambda r: ([valid_user_raw, invalid_user] if r == "users" else [])
@@ -187,8 +200,13 @@ def test__loader__partial_invalid__saves_only_valid(
 
 
 def test__loader__users__loads_address_and_company(
-    loader, mock_api, repo, valid_user_raw, expected_address_record, expected_company_record
-):
+    loader: Loader,
+    mock_api: MagicMock,
+    repo: MagicMock,
+    valid_user_raw: dict[str, Any],
+    expected_address_record: dict[str, Any],
+    expected_company_record: dict[str, Any],
+) -> None:
     # Arrange
     mock_api.get_resource.side_effect = (
         lambda resource: [valid_user_raw] if resource == "users" else []
@@ -204,8 +222,11 @@ def test__loader__users__loads_address_and_company(
 
 
 def test__loader__run__preserves_resource_and_table_order(
-    loader, mock_api, repo, full_api_payload
-):
+    loader: Loader,
+    mock_api: MagicMock,
+    repo: MagicMock,
+    full_api_payload: dict[str, list[dict[str, Any]]],
+) -> None:
     # Arrange
     mock_api.get_resource.side_effect = lambda resource: full_api_payload[resource]
 
@@ -229,15 +250,16 @@ def test__loader__run__preserves_resource_and_table_order(
 
 
 def test__loader__run_twice__does_not_create_duplicates(
-    full_api_payload, sqlite_test_engine
-):
+    full_api_payload: dict[str, list[dict[str, Any]]],
+    sqlite_test_engine: Engine,
+) -> None:
     # Arrange
     api_client = MagicMock()
     api_client.get_resource.side_effect = lambda resource: full_api_payload[resource]
     loader = Loader(api_client, SQLiteRepository())
 
     @contextmanager
-    def test_session():
+    def test_session() -> Iterator[Session]:
         with Session(sqlite_test_engine) as session:
             yield session
 

@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.orm import Session
@@ -12,6 +12,10 @@ from src.repository import BaseRepository, SQLiteRepository
 
 logger = logging.getLogger(__name__)
 
+JsonDict = dict[str, Any]
+LoadMapping = dict[str, Any]
+LoadJob = dict[str, Any]
+
 
 def get_repository(db_url: str) -> BaseRepository:
     if db_url.startswith("sqlite"):
@@ -21,11 +25,11 @@ def get_repository(db_url: str) -> BaseRepository:
 
 
 class Loader:
-    def __init__(self, api_client: ApiClient, repository: BaseRepository):
+    def __init__(self, api_client: ApiClient, repository: BaseRepository) -> None:
         self._api_client = api_client
         self._repository = repository
 
-        self._load_jobs = [
+        self._load_jobs: list[LoadJob] = [
             {
                 "resource": "users",
                 "model": User,
@@ -59,7 +63,9 @@ class Loader:
             },
         ]
 
-    def _map_parent(self, model_obj, load_job, _mapping):
+    def _map_parent(
+        self, model_obj: Any, load_job: LoadJob, _mapping: LoadMapping
+    ) -> JsonDict:
         nested_attributes = {
             mapping["attribute"]
             for mapping in load_job["mappings"]
@@ -67,7 +73,9 @@ class Loader:
         }
         return model_obj.model_dump(exclude=nested_attributes)
 
-    def _map_nested(self, model_obj, _load_job, mapping):
+    def _map_nested(
+        self, model_obj: Any, _load_job: LoadJob, mapping: LoadMapping
+    ) -> JsonDict | None:
         nested_model = getattr(model_obj, mapping["attribute"], None)
         if not nested_model:
             return None
@@ -78,7 +86,9 @@ class Loader:
             **nested_model.model_dump(),
         }
 
-    def _validate_model(self, model_class, item, load_job):
+    def _validate_model(
+        self, model_class: type[Any], item: JsonDict, load_job: LoadJob
+    ) -> Any:
         model = model_class.model_validate(item)
 
         for mapping in load_job["mappings"]:
@@ -91,7 +101,11 @@ class Loader:
                 mapping["fk_field"]: getattr(model, parent_key),
                 **item[resource],
             }
-            setattr(model, mapping["attribute"], mapping["db_model"].model_validate(nested_item))
+            setattr(
+                model,
+                mapping["attribute"],
+                mapping["db_model"].model_validate(nested_item),
+            )
 
         return model
 
@@ -103,7 +117,7 @@ class Loader:
                 for load_job in self._load_jobs:
                     self._process_entity(session, load_job)
 
-    def _process_entity(self, session: Session, load_job: Dict[str, Any]) -> None:
+    def _process_entity(self, session: Session, load_job: LoadJob) -> None:
         resource = load_job["resource"]
         raw_data = self._api_client.get_resource(resource)
         model_class = load_job["model"]

@@ -1,6 +1,6 @@
 import logging
 from contextlib import contextmanager
-from typing import Generator
+from typing import Any, Generator
 
 import sqlalchemy
 from sqlmodel import Session, create_engine
@@ -10,7 +10,7 @@ from src.exceptions import DatabaseError
 logger = logging.getLogger(__name__)
 
 
-def get_engine_args(url: str) -> dict:
+def get_engine_args(url: str) -> dict[str, Any]:
     args = {"echo": config.SQL_ECHO}
     if url.startswith("sqlite"):
         args["connect_args"] = {"check_same_thread": False}
@@ -21,7 +21,7 @@ engine = create_engine(config.DATABASE_URL, **get_engine_args(config.DATABASE_UR
 
 
 @sqlalchemy.event.listens_for(engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
+def set_sqlite_pragma(dbapi_connection: Any, connection_record: Any) -> None:
     if config.DATABASE_URL.startswith("sqlite"):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")

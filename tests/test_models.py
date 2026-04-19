@@ -1,10 +1,12 @@
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 from src.models import User, Post, Comment, Address
 
 
 @pytest.fixture
-def valid_user_data():
+def valid_user_data() -> dict[str, Any]:
     # Arrange
     return {
         "id": 1,
@@ -29,7 +31,7 @@ def valid_user_data():
 
 
 @pytest.fixture
-def valid_post_data():
+def valid_post_data() -> dict[str, Any]:
     # Arrange
     return {
         "id": 1,
@@ -40,7 +42,7 @@ def valid_post_data():
 
 
 @pytest.fixture
-def valid_comment_data():
+def valid_comment_data() -> dict[str, Any]:
     # Arrange
     return {
         "id": 1,
@@ -51,7 +53,7 @@ def valid_comment_data():
     }
 
 
-def test__user_model__valid_data__instantiated(valid_user_data):
+def test__user_model__valid_data__instantiated(valid_user_data: dict[str, Any]) -> None:
     # Act
     user = User.model_validate(valid_user_data)
 
@@ -59,7 +61,9 @@ def test__user_model__valid_data__instantiated(valid_user_data):
     assert user.id == 1
 
 
-def test__user_model__missing_id__raises_validation_error(valid_user_data):
+def test__user_model__missing_id__raises_validation_error(
+    valid_user_data: dict[str, Any],
+) -> None:
     # Arrange
     del valid_user_data["id"]
 
@@ -68,7 +72,9 @@ def test__user_model__missing_id__raises_validation_error(valid_user_data):
         User.model_validate(valid_user_data)
 
 
-def test__user_model__none_field__raises_validation_error(valid_user_data):
+def test__user_model__none_field__raises_validation_error(
+    valid_user_data: dict[str, Any],
+) -> None:
     # Arrange
     valid_user_data["name"] = None
 
@@ -77,7 +83,9 @@ def test__user_model__none_field__raises_validation_error(valid_user_data):
         User.model_validate(valid_user_data)
 
 
-def test__user_model__invalid_email__raises_validation_error(valid_user_data):
+def test__user_model__invalid_email__raises_validation_error(
+    valid_user_data: dict[str, Any],
+) -> None:
     # Arrange
     valid_user_data["email"] = "not-an-email"
 
@@ -86,7 +94,7 @@ def test__user_model__invalid_email__raises_validation_error(valid_user_data):
         User.model_validate(valid_user_data)
 
 
-def test__comment_model__invalid_email__raises_validation_error():
+def test__comment_model__invalid_email__raises_validation_error() -> None:
     # Arrange & Act & Assert
     with pytest.raises(ValidationError):
         Comment.model_validate(
@@ -94,7 +102,7 @@ def test__comment_model__invalid_email__raises_validation_error():
         )
 
 
-def test__user_model__empty_name__raises_error(valid_user_data):
+def test__user_model__empty_name__raises_error(valid_user_data: dict[str, Any]) -> None:
     # Arrange
     valid_user_data["name"] = "   "
 
@@ -103,7 +111,9 @@ def test__user_model__empty_name__raises_error(valid_user_data):
         User.model_validate(valid_user_data)
 
 
-def test__user_model__empty_address__raises_error(valid_user_data):
+def test__user_model__empty_address__raises_error(
+    valid_user_data: dict[str, Any],
+) -> None:
     # Arrange
     valid_user_data["address"] = None
 
@@ -112,7 +122,7 @@ def test__user_model__empty_address__raises_error(valid_user_data):
         User.model_validate(valid_user_data)
 
 
-def test__post_model__empty_title__raises_error(valid_post_data):
+def test__post_model__empty_title__raises_error(valid_post_data: dict[str, Any]) -> None:
     # Arrange
     valid_post_data["title"] = ""
 
@@ -121,7 +131,9 @@ def test__post_model__empty_title__raises_error(valid_post_data):
         Post.model_validate(valid_post_data)
 
 
-def test__comment_model__empty_body__raises_error(valid_comment_data):
+def test__comment_model__empty_body__raises_error(
+    valid_comment_data: dict[str, Any],
+) -> None:
     # Arrange
     valid_comment_data["body"] = " \n "
 
@@ -130,7 +142,7 @@ def test__comment_model__empty_body__raises_error(valid_comment_data):
         Comment.model_validate(valid_comment_data)
 
 
-def test__address_model__flatten_geo__maps_lat_lng():
+def test__address_model__flatten_geo__maps_lat_lng() -> None:
     # Arrange
     data = {
         "user_id": 1,
@@ -142,5 +154,5 @@ def test__address_model__flatten_geo__maps_lat_lng():
     address = Address.model_validate(data)
 
     # Assert
-    assert address.geo_lat == "1.23"
-    assert address.geo_lng == "4.56"
+    assert address.geo_lat == 1.23
+    assert address.geo_lng == 4.56

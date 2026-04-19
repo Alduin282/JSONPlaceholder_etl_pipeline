@@ -1,3 +1,6 @@
+from pathlib import Path
+from typing import Iterator
+
 import pytest
 from sqlalchemy import text
 from src.db import get_session, engine
@@ -5,7 +8,7 @@ from src import config
 
 
 @pytest.fixture
-def test_db(tmp_path):
+def test_db(tmp_path: Path) -> Iterator[Path]:
     # Arrange
     db_file = tmp_path / "test.db"
     original_db = config.DB_PATH
@@ -18,14 +21,14 @@ def test_db(tmp_path):
     config.DB_PATH = original_db
 
 
-def test__db__get_session__provides_active_session():
+def test__db__get_session__provides_active_session() -> None:
     # Act
     with get_session() as session:
         # Assert
         assert session.is_active
 
 
-def test__db__sqlite_pragmas__foreign_keys_enabled():
+def test__db__sqlite_pragmas__foreign_keys_enabled() -> None:
     # Act
     with get_session() as session:
         result = session.exec(text("PRAGMA foreign_keys")).fetchone()
@@ -33,7 +36,7 @@ def test__db__sqlite_pragmas__foreign_keys_enabled():
         assert result[0] == 1
 
 
-def test__db__sqlite_pragmas__wal_mode_enabled():
+def test__db__sqlite_pragmas__wal_mode_enabled() -> None:
     # Act
     with get_session() as session:
         result = session.exec(text("PRAGMA journal_mode")).fetchone()

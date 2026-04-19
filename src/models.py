@@ -1,4 +1,4 @@
-from typing import List
+from typing import Any, List
 from pydantic import field_validator, ConfigDict, EmailStr, model_validator
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -34,7 +34,7 @@ class User(SQLModel, table=True):
 
     @model_validator(mode="before")
     @classmethod
-    def validate_relationships(cls, data: any) -> any:
+    def validate_relationships(cls, data: Any) -> Any:
         if isinstance(data, dict):
             if "address" not in data or data["address"] is None:
                 raise ValueError("Поле address обязательно")
@@ -54,18 +54,18 @@ class Address(SQLModel, table=True):
     city: str = ""
     zipcode: str = ""
 
-    geo_lat: str = ""
-    geo_lng: str = ""
+    geo_lat: float | None = None
+    geo_lng: float | None = None
 
     user: "User" = Relationship(back_populates="address")
 
     @model_validator(mode="before")
     @classmethod
-    def flatten_geo(cls, data: any) -> any:
+    def flatten_geo(cls, data: Any) -> Any:
         if isinstance(data, dict) and "geo" in data:
             geo = data.pop("geo")
-            data["geo_lat"] = geo.get("lat", "")
-            data["geo_lng"] = geo.get("lng", "")
+            data["geo_lat"] = geo.get("lat")
+            data["geo_lng"] = geo.get("lng")
         return data
 
 

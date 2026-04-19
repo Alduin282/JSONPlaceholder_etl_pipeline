@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class BaseRepository(Protocol):
     @abstractmethod
-    def create_tables(self, engine) -> None: ...
+    def create_tables(self, engine: Any) -> None: ...
 
     @abstractmethod
     def upsert_many(
@@ -19,7 +19,7 @@ class BaseRepository(Protocol):
 
 
 class SQLiteRepository:
-    def create_tables(self, engine) -> None:
+    def create_tables(self, engine: Any) -> None:
         SQLModel.metadata.create_all(engine)
         logger.info("Схема БД синхронизирована (SQLite)")
 
